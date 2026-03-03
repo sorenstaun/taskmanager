@@ -3,10 +3,10 @@ config :ash, policies: [show_policy_breakdowns?: true]
 
 # Configure your database
 config :task_manager, TaskManager.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "phoenix",
+  password: "nex3cute",
   hostname: "localhost",
-  database: "task_manager_dev",
+  database: "taskmanager",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
