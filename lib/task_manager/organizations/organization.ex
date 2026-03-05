@@ -12,7 +12,7 @@ defmodule TaskManager.Organizations.Organization do
   end
 
   actions do
-    defaults [:read, :update, :destroy]
+    defaults [:read, :destroy]
 
     create :create do
       primary? true
@@ -30,7 +30,66 @@ defmodule TaskManager.Organizations.Organization do
         end)
       end
     end
+
+    update :update do
+      primary? true
+      require_atomic? false
+      accept [:name, :plan, :owner_id, :max_users, :active]
+    end
+
+    create :register do
+      accept [:name, :slug]
+
+      argument :owner, :map do
+        allow_nil? false
+      end
+
+      change fn changeset, _ ->
+        owner_params = Ash.Changeset.get_argument(changeset, :owner)
+
+        changeset =
+          case Ash.Changeset.get_attribute(changeset, :slug) do
+            nil ->
+              name = Ash.Changeset.get_attribute(changeset, :name)
+              slug = name |> String.downcase() |> String.replace(" ", "-")
+              Ash.Changeset.change_attribute(changeset, :slug, slug)
+
+            _ ->
+              changeset
+          end
+
+        changeset
+        |> Ash.Changeset.after_action(fn _changeset, org ->
+          user_args = %{
+            email: owner_params[:email] || owner_params["email"],
+            password: owner_params[:password] || owner_params["password"],
+            password_confirmation: owner_params[:password_confirmation] || owner_params["password_confirmation"],
+            organization_id: org.id
+          }
+
+          with {:ok, user} <-
+                 Ash.create(TaskManager.Accounts.User, user_args,
+                   action: :register_with_password,
+                   authorize?: false
+                 ),
+               {:ok, final_org} <- Ash.update(org, %{owner_id: user.id}, authorize?: false) do
+            {:ok, final_org}
+          else
+            {:error, error} -> {:error, error}
+          end
+        end)
+      end
+    end
   end
+
+  policies do
+    bypass action(:register) do
+      authorize_if always()
+    end
+  end
+
+
+  # org = TaskManager.Organizations.Organization |> Ash.Changeset.for_create(:register, %{name: "Startup Inc", owner: %{email: "owner@startup.com", password: "supersecret", password_confirmation: "supersecret" }}) |> Ash.create!(authorize?: false)
 
   validations do
     validate match(:slug, ~r/^[a-z0-9-]+$/) do
@@ -48,7 +107,20 @@ defmodule TaskManager.Organizations.Organization do
     attribute :plan, :atom
     attribute :max_users, :integer
     attribute :active, :boolean
+
+    attribute :owner_id, :uuid do
+      allow_nil? true
+      public? true
+    end
+
     timestamps()
+  end
+
+  relationships do
+    belongs_to :owner, TaskManager.Accounts.User do
+      source_attribute :owner_id
+      public? true
+    end
   end
 
   identities do
