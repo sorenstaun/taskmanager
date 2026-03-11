@@ -63,13 +63,25 @@ defmodule TaskManager.Organizations.Organization do
           user_args = %{
             email: owner_params[:email] || owner_params["email"],
             password: owner_params[:password] || owner_params["password"],
-            password_confirmation: owner_params[:password_confirmation] || owner_params["password_confirmation"],
+            password_confirmation:
+              owner_params[:password_confirmation] || owner_params["password_confirmation"],
             organization_id: org.id
           }
 
           with {:ok, user} <-
                  Ash.create(TaskManager.Accounts.User, user_args,
                    action: :register_with_password,
+                   authorize?: false
+                 ),
+               {:ok, _membership} <-
+                 Ash.create(
+                   TaskManager.Organizations.Membership,
+                   %{
+                     user_id: user.id,
+                     organization_id: org.id,
+                     role: :owner
+                   },
+                   tenant: org.id,
                    authorize?: false
                  ),
                {:ok, final_org} <- Ash.update(org, %{owner_id: user.id}, authorize?: false) do
@@ -87,7 +99,6 @@ defmodule TaskManager.Organizations.Organization do
       authorize_if always()
     end
   end
-
 
   # org = TaskManager.Organizations.Organization |> Ash.Changeset.for_create(:register, %{name: "Startup Inc", owner: %{email: "owner@startup.com", password: "supersecret", password_confirmation: "supersecret" }}) |> Ash.create!(authorize?: false)
 
@@ -121,6 +132,18 @@ defmodule TaskManager.Organizations.Organization do
       source_attribute :owner_id
       public? true
     end
+
+    has_many :memberships, TaskManager.Organizations.Membership do
+      public? false
+    end
+
+    many_to_many :users, TaskManager.Accounts.User do
+      through TaskManager.Organizations.Membership
+      source_attribute_on_join_resource :organization_id
+      destination_attribute_on_join_resource :user_id
+      public? true
+    end
+
   end
 
   identities do
